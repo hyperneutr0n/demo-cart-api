@@ -18,5 +18,26 @@ pipeline {
         }
       }
     }
+
+    stage('Build Image') {
+      steps {
+        sh 'docker compose build'
+      }
+    }
+
+    stage('Deploy') {
+      steps {
+        sh 'docker compose up -d --wait'
+      }
+    }
+  }
+
+  post {
+    success {
+      echo 'Pipeline berhasil: cart-api berjalan di port 3000'
+    }
+    failure {
+      echo 'Pipeline gagal: cek stage yang berwarna merah'
+    }
   }
 }
