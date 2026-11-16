@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: express-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: express-demo }
+  template:
+    metadata:
+      labels: { app: express-demo }
+    spec:
+      containers:
+        - name: express-demo
+          image: IMAGE_PLACEHOLDER
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet: { path: /, port: 3000 }
+            initialDelaySeconds: 3
