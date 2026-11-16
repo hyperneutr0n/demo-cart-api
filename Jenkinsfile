@@ -1,43 +1,52 @@
 pipeline {
   agent any
+  parameters {
+    string(name: 'IMAGE_TAG', defaultValue: '',
+           description: 'SHA commit yang akan di-deploy. Kosongkan untuk commit terbaru di branch prod.')
+  }
+  environment {
+    APP       = 'express-demo'
+    IMAGE     = "docker.io/USERNAME/${APP}"
+    NS        = 'prod'
+    NODE_PORT = '30080'
+  }
   stages {
-    stage('Test') {
-      agent {
-        docker {
-          image 'node:22-alpine'
-          reuseNode true
-        }
-      }
+    stage('Tentukan versi') {
       steps {
-        sh 'npm ci --cache .npm'
-        sh 'npm run test:ci'
-      }
-      post {
-        always {
-          junit testResults: 'reports/junit.xml', allowEmptyResults: true
+        script {
+          env.TAG = params.IMAGE_TAG?.trim() ?:
+                    sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+          currentBuild.description = "prod ← ${env.TAG}"
         }
       }
     }
-
-    stage('Build Image') {
+ 
+    stage('Cek image di registry') {
       steps {
-        sh 'docker compose build'
+        // Gagal kalau image dengan SHA ini belum pernah di-build dan di-push oleh job Multibranch
+        sh 'docker manifest inspect $IMAGE:$TAG > /dev/null'
       }
     }
-
-    stage('Deploy') {
+ 
+    stage('Deploy prod') {
       steps {
-        sh 'docker compose up -d --wait'
+        withCredentials([file(credentialsId: 'k3s-kubeconfig', variable: 'KUBECONFIG')]) {
+          sh '''
+            kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+            sed -e "s|IMAGE_PLACEHOLDER|$IMAGE:$TAG|" -e "s|NODEPORT_PLACEHOLDER|$NODE_PORT|" k8s/app.yaml | kubectl apply -n "$NS" -f -
+            kubectl rollout status deployment/$APP -n "$NS" --timeout=120s
+          '''
+        }
       }
     }
   }
-
+ 
   post {
     success {
-      echo 'Pipeline berhasil: cart-api berjalan di port 3000'
+      echo "Deploy berhasil: ${env.IMAGE}:${env.TAG} berjalan di namespace prod (port ${env.NODE_PORT})"
     }
     failure {
-      echo 'Pipeline gagal: cek stage yang berwarna merah'
+      echo 'Deploy gagal: cek apakah SHA benar dan image sudah ada di registry'
     }
   }
 }
